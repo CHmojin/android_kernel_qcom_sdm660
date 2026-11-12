@@ -1,0 +1,144 @@
+name: Build 4.19 boot image (EEBBK H7000)
+
+# 一键产出可刷入的 boot.img：
+#   1) 用 clang-r450784d + gcc-4.9 编译 4.19.325 内核
+#   2) 编译 H7000 设备树 sda660-mtp-H7000.dtb
+#   3) Image.gz + dtb 拼成 Image.gz-dtb（sdm660 ABL 的 QCDT 约定）
+#   4) 用原始 4.4.302 boot 的 header/ramdisk 重新打包成 boot-4.19-H7000.img
+#
+# 产物：Actions -> 本次 run -> Artifacts ->
+#   boot-4.19-H7000     可刷入的 boot 镜像
+#   kernel-dtb-4.19     Image.gz-dtb（自己打包用）
+#   dtb-4.19            sda660-mtp-H7000.dtb
+#   kernel-log          完整编译日志
+
+on:
+  workflow_dispatch:
+    inputs:
+      touch:
+        description: '同时启用 focaltech 触摸（CONFIG_DRM_PANEL + TOUCHSCREEN_FTS）'
+        type: boolean
+        default: false
+
+jobs:
+  build:
+    name: build-4.19-boot
+    runs-on: ubuntu-22.04
+    timeout-minutes: 180
+
+    steps:
+      - name: Checkout kernel source
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Set up swap
+        uses: pierotofy/set-swap-space@master
+        with:
+          swap-size-gb: 5
+
+      - name: Install host dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            git automake flex lzop bison gperf build-essential zip curl \
+            zlib1g-dev g++-multilib libxml2-utils bzip2 libbz2-dev \
+            squashfs-tools pngcrush schedtool dpkg-dev liblz4-tool make \
+            optipng maven libssl-dev pwgen libswitch-perl policycoreutils \
+            minicom libxml-sax-base-perl libxml-simple-perl bc \
+            libc6-dev-i386 lib32ncurses5-dev libx11-dev lib32z-dev \
+            libgl1-mesa-dev xsltproc unzip device-tree-compiler \
+            python2 python3 libelf-dev
+
+      - name: Fetch clang toolchain (r450784d)
+        run: |
+          mkdir -p "$GITHUB_WORKSPACE/toolchain/clang"
+          wget -q https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/heads/android13-release/clang-r450784d.tar.gz \
+               -O /tmp/clang.tar.gz
+          tar zxf /tmp/clang.tar.gz -C "$GITHUB_WORKSPACE/toolchain/clang"
+
+      - name: Fetch aarch64 gcc toolchain (4.9)
+        run: |
+          git clone --depth=1 -b lineage-19.1 \
+            https://github.com/LineageOS/android_prebuilts_gcc_linux-x86_aarch64_aarch64-linux-android-4.9 \
+            "$GITHUB_WORKSPACE/toolchain/gcc"
+
+      - name: Apply H7000 overlay
+        run: |
+          cd "$GITHUB_WORKSPACE"
+          if [ "${{ inputs.touch }}" = "true" ]; then
+            python3 tools/apply_overlay.py --root . --touch
+          else
+            python3 tools/apply_overlay.py --root .
+          fi
+          echo "--- backlight Kconfig ---"
+          grep -A2 'config BACKLIGHT_KTZ8864' drivers/video/backlight/Kconfig || true
+          echo "--- defconfig tail ---"
+          tail -n 8 arch/arm64/configs/vendor/sdm660-perf_defconfig
+
+      - name: Build kernel
+        run: |
+          set -o pipefail
+          export ARCH=arm64
+          export SUBARCH=arm64
+          export PATH="$GITHUB_WORKSPACE/toolchain/clang/bin:$GITHUB_WORKSPACE/toolchain/gcc/bin:$PATH"
+          export CROSS_COMPILE="$GITHUB_WORKSPACE/toolchain/gcc/bin/aarch64-linux-android-"
+          export LLVM=1
+          export CC="clang"
+          export LD="ld.lld"
+          export KBUILD_BUILD_HOST=Github-Action
+          export KBUILD_BUILD_USER=$(echo '${{ github.actor }}' | tr 'A-Z' 'a-z')
+          cd "$GITHUB_WORKSPACE"
+          make O=out vendor/sdm660-perf_defconfig
+          make -j"$(nproc --all)" O=out KCFLAGS="-Wno-error" 2>&1 | tee kernel.log
+          make -j"$(nproc --all)" O=out dtbs 2>&1 | tee -a kernel.log
+
+      - name: Assemble Image.gz-dtb
+        run: |
+          set -e
+          cd "$GITHUB_WORKSPACE"
+          DTB=out/arch/arm64/boot/dts/vendor/qcom/eebbk/sda660-mtp-H7000.dtb
+          IMG=out/arch/arm64/boot/Image.gz
+          test -f "$IMG" || { echo "::error::Image.gz was not produced"; exit 1; }
+          test -f "$DTB" || { echo "::error::$DTB was not produced"; exit 1; }
+          ls -l "$IMG" "$DTB"
+          cat "$IMG" "$DTB" > out/arch/arm64/boot/Image.gz-dtb
+          ls -l out/arch/arm64/boot/Image.gz-dtb
+
+      - name: Pack boot image
+        run: |
+          set -e
+          cd "$GITHUB_WORKSPACE"
+          python3 tools/pack_boot.py \
+            --kernel out/arch/arm64/boot/Image.gz-dtb \
+            --ramdisk overlay/boot/ramdisk.gz \
+            --header overlay/boot/header.json \
+            --out boot-4.19-H7000.img
+          sha256sum boot-4.19-H7000.img out/arch/arm64/boot/Image.gz-dtb
+
+      - name: Upload boot image
+        uses: actions/upload-artifact@v4
+        with:
+          name: boot-4.19-H7000
+          path: boot-4.19-H7000.img
+          if-no-files-found: error
+
+      - name: Upload kernel + dtb
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: kernel-dtb-4.19
+          path: |
+            out/arch/arm64/boot/Image.gz
+            out/arch/arm64/boot/dts/vendor/qcom/eebbk/sda660-mtp-H7000.dtb
+          if-no-files-found: warn
+
+      - name: Upload logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: kernel-log
+          path: |
+            kernel.log
+            out/.config
+          if-no-files-found: warn
