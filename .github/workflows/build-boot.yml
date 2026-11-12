@@ -20,6 +20,9 @@ on:
         type: boolean
         default: false
 
+permissions:
+  contents: write
+
 jobs:
   build:
     name: build-4.19-boot
@@ -122,6 +125,33 @@ jobs:
           name: boot-4.19-H7000
           path: boot-4.19-H7000.img
           if-no-files-found: error
+
+      # 备用取回通道：Actions artifact 走的是 Azure CDN，国内网络经常被重置。
+      # 这里把产物直接推到 boot-artifact 分支，之后可以从 raw.githubusercontent.com 拉。
+      - name: Publish boot image to boot-artifact branch
+        if: always()
+        run: |
+          set -e
+          cd "$GITHUB_WORKSPACE"
+          test -f boot-4.19-H7000.img || { echo "no image, skip"; exit 0; }
+          git config user.name "h7000-ci"
+          git config user.email "h7000-ci@users.noreply.github.com"
+          git checkout -B boot-artifact
+          git add -f boot-4.19-H7000.img
+          if [ -f out/arch/arm64/boot/dts/vendor/qcom/eebbk/sda660-mtp-H7000.dtb ]; then
+            cp out/arch/arm64/boot/dts/vendor/qcom/eebbk/sda660-mtp-H7000.dtb h7000-4.19.dtb
+            git add -f h7000-4.19.dtb
+          fi
+          if [ -f out/arch/arm64/boot/Image.gz ]; then
+            cp out/arch/arm64/boot/Image.gz Image-4.19.gz
+            git add -f Image-4.19.gz
+          fi
+          if [ -f out/.config ]; then
+            cp out/.config kernel-4.19.config
+            git add -f kernel-4.19.config
+          fi
+          git commit -m "boot-4.19-H7000.img from run ${{ github.run_id }} [skip ci]"
+          git push --force origin boot-artifact
 
       - name: Upload kernel + dtb
         if: always()
