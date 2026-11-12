@@ -1,0 +1,20 @@
+{
+  "header_version": 1,
+  "kernel_size": 12267065,
+  "kernel_addr": 32768,
+  "ramdisk_size": 825469,
+  "ramdisk_addr": 16777216,
+  "second_size": 0,
+  "second_addr": 0,
+  "tags_addr": 256,
+  "page_size": 4096,
+  "os_version": 369099138,
+  "name": "",
+  "cmdline": "androidboot.console=0 androidboot.hardware=qcom ehci-hcd.park=3 loop.max_part=7 lpm_levels.sleep_disabled=1 msm_rtb.filter=0x37 printk.devkmsg=on sched_enable_hmp=1 sched_enable_power_aware=1 service_locator.enable=1 swiotlb=1 user_debug=31 androidboot.init_fatal_reboot_target=recovery androidboot.selinux=permissive buildvariant=eng",
+  "extra_cmdline": "",
+  "id": "6edead6e203291b6871183dbf5b933bc477d7c51000000000000000000000000",
+  "recovery_dtbo_size": 0,
+  "recovery_dtbo_offset": 0,
+  "dtb_size": 0,
+  "dtb_addr": 0
+}
