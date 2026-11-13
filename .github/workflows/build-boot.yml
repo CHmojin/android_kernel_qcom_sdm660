@@ -19,6 +19,10 @@ on:
         description: '同时启用 focaltech 触摸（CONFIG_DRM_PANEL + TOUCHSCREEN_FTS）'
         type: boolean
         default: false
+      kflags:
+        description: '额外 KCFLAGS（例如 -Os，用来把内核压小）'
+        type: string
+        default: ''
 
 permissions:
   contents: write
@@ -93,7 +97,7 @@ jobs:
           export KBUILD_BUILD_USER=$(echo '${{ github.actor }}' | tr 'A-Z' 'a-z')
           cd "$GITHUB_WORKSPACE"
           make O=out vendor/sdm660-perf_defconfig
-          make -j"$(nproc --all)" O=out KCFLAGS="-Wno-error" 2>&1 | tee kernel.log
+          make -j"$(nproc --all)" O=out KCFLAGS="-Wno-error ${{ inputs.kflags }}" 2>&1 | tee kernel.log
           make -j"$(nproc --all)" O=out dtbs 2>&1 | tee -a kernel.log
 
       - name: Assemble Image.gz-dtb
