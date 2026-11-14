@@ -23,6 +23,10 @@ on:
         description: '额外 KCFLAGS（例如 -Os，用来把内核压小）'
         type: string
         default: ''
+      lean:
+        description: '减小内核体积（KALLSYMS_ALL=n 等），避免 kernel blob 超过 16 MB'
+        type: boolean
+        default: false
 
 permissions:
   contents: write
@@ -69,6 +73,14 @@ jobs:
           git clone --depth=1 -b lineage-19.1 \
             https://github.com/LineageOS/android_prebuilts_gcc_linux-x86_aarch64_aarch64-linux-android-4.9 \
             "$GITHUB_WORKSPACE/toolchain/gcc"
+
+      - name: Lean size tweaks
+        if: inputs.lean
+        run: |
+          cd "$GITHUB_WORKSPACE"
+          CFG=arch/arm64/configs/vendor/sdm660-perf_defconfig
+          printf '%s\n' '# CONFIG_KALLSYMS_ALL is not set' '# CONFIG_DEBUG_INFO is not set' >> "$CFG"
+          tail -n 5 "$CFG"
 
       - name: Apply H7000 overlay
         run: |
