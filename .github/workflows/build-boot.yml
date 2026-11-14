@@ -39,6 +39,10 @@ on:
         description: '诊断：把 arm64 的 FDT 校验死循环改成 panic（会变成重启循环）'
         type: boolean
         default: false
+      use_gcc:
+        description: '用 GCC 而不是 clang 编译'
+        type: boolean
+        default: false
 
 permissions:
   contents: write
@@ -153,9 +157,14 @@ jobs:
           export SUBARCH=arm64
           export PATH="$GITHUB_WORKSPACE/toolchain/clang/bin:$GITHUB_WORKSPACE/toolchain/gcc/bin:$PATH"
           export CROSS_COMPILE="$GITHUB_WORKSPACE/toolchain/gcc/bin/aarch64-linux-android-"
-          export LLVM=1
-          export CC="clang"
-          export LD="ld.lld"
+          if [ "${{ inputs.use_gcc }}" = "true" ]; then
+            echo "== building with GCC =="
+            unset LLVM CC LD
+          else
+            export LLVM=1
+            export CC="clang"
+            export LD="ld.lld"
+          fi
           export KBUILD_BUILD_HOST=Github-Action
           export KBUILD_BUILD_USER=$(echo '${{ github.actor }}' | tr 'A-Z' 'a-z')
           cd "$GITHUB_WORKSPACE"
