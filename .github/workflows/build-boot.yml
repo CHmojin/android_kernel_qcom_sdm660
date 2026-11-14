@@ -31,6 +31,14 @@ on:
         description: '关闭 KASLR（CONFIG_RANDOMIZE_BASE=n）'
         type: boolean
         default: false
+      no_arch_feat:
+        description: '关闭 4.19 才有的 ARM64 特性（PAN/UAO/RAS/SVE/LSE）'
+        type: boolean
+        default: false
+      panic_on_bad_fdt:
+        description: '诊断：把 arm64 的 FDT 校验死循环改成 panic（会变成重启循环）'
+        type: boolean
+        default: false
 
 permissions:
   contents: write
@@ -78,6 +86,24 @@ jobs:
             https://github.com/LineageOS/android_prebuilts_gcc_linux-x86_aarch64_aarch64-linux-android-4.9 \
             "$GITHUB_WORKSPACE/toolchain/gcc"
 
+      - name: Patch arm64 FDT error path (diagnostic)
+        if: inputs.panic_on_bad_fdt
+        run: |
+          cd "$GITHUB_WORKSPACE"
+          python3 - <<'PYEOF'
+          p = "arch/arm64/kernel/setup.c"
+          s = open(p).read()
+          old = "\t\twhile (true)\n\t\t\tcpu_relax();"
+          new = "\t\tpanic(\"H7000: invalid fdt\");"
+          if old in s:
+              s = s.replace(old, new)
+              open(p, "w").write(s)
+              print("patched FDT error path -> panic")
+          else:
+              print("WARNING: pattern not found")
+          PYEOF
+          grep -n "H7000: invalid fdt" arch/arm64/kernel/setup.c || true
+
       - name: Lean size tweaks
         if: inputs.lean
         run: |
@@ -85,6 +111,19 @@ jobs:
           CFG=arch/arm64/configs/vendor/sdm660-perf_defconfig
           printf '%s\n' '# CONFIG_KALLSYMS_ALL is not set' '# CONFIG_DEBUG_INFO is not set' >> "$CFG"
           tail -n 5 "$CFG"
+
+      - name: Disable 4.19-only arch features
+        if: inputs.no_arch_feat
+        run: |
+          cd "$GITHUB_WORKSPACE"
+          CFG=arch/arm64/configs/vendor/sdm660-perf_defconfig
+          printf '%s\n' \
+            '# CONFIG_ARM64_PAN is not set' \
+            '# CONFIG_ARM64_UAO is not set' \
+            '# CONFIG_ARM64_RAS_EXTN is not set' \
+            '# CONFIG_ARM64_SVE is not set' \
+            '# CONFIG_ARM64_LSE_ATOMICS is not set' >> "$CFG"
+          tail -n 7 "$CFG"
 
       - name: Disable KASLR
         if: inputs.no_kaslr
