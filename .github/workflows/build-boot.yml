@@ -27,6 +27,10 @@ on:
         description: '减小内核体积（KALLSYMS_ALL=n 等），避免 kernel blob 超过 16 MB'
         type: boolean
         default: false
+      no_kaslr:
+        description: '关闭 KASLR（CONFIG_RANDOMIZE_BASE=n）'
+        type: boolean
+        default: false
 
 permissions:
   contents: write
@@ -81,6 +85,14 @@ jobs:
           CFG=arch/arm64/configs/vendor/sdm660-perf_defconfig
           printf '%s\n' '# CONFIG_KALLSYMS_ALL is not set' '# CONFIG_DEBUG_INFO is not set' >> "$CFG"
           tail -n 5 "$CFG"
+
+      - name: Disable KASLR
+        if: inputs.no_kaslr
+        run: |
+          cd "$GITHUB_WORKSPACE"
+          CFG=arch/arm64/configs/vendor/sdm660-perf_defconfig
+          printf '%s\n' '# CONFIG_RANDOMIZE_BASE is not set' >> "$CFG"
+          tail -n 3 "$CFG"
 
       - name: Apply H7000 overlay
         run: |
