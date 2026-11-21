@@ -578,6 +578,7 @@ asmlinkage __visible void __init start_kernel(void)
 	page_address_init();
 	pr_notice("%s", linux_banner);
 	setup_arch(&command_line);
+	h7_fb_mark(0);
 	mm_init_cpumask(&init_mm);
 	setup_command_line(command_line);
 	setup_nr_cpu_ids();
@@ -612,6 +613,7 @@ asmlinkage __visible void __init start_kernel(void)
 	sort_main_extable();
 	trap_init();
 	mm_init();
+	h7_fb_mark(1);
 
 	ftrace_init();
 
@@ -760,6 +762,7 @@ asmlinkage __visible void __init start_kernel(void)
 	}
 
 	/* Do the rest non-__init'ed, we're now alive */
+	h7_fb_mark(2);
 	rest_init();
 
 	prevent_tail_call_optimization();
