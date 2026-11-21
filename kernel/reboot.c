@@ -605,7 +605,8 @@ __setup("reboot=", reboot_setup);
 #include <linux/delay.h>
 #include <linux/ktime.h>
 
-#define H7_LOGFS_DEV	MKDEV(179, 37)
+/* the block major is allocated dynamically on this kernel: look it up by name */
+#define H7_LOGFS_NAME	"mmcblk0p37"
 
 static char *h7_buf;
 static struct kmsg_dumper h7_dumper;
@@ -617,7 +618,11 @@ static void h7_flash_write(const char *buf, size_t len)
 
 	if (!len)
 		return;
-	bdev = blkdev_get_by_dev(H7_LOGFS_DEV, FMODE_WRITE, NULL);
+	dev_t dev = blk_lookup_devt(H7_LOGFS_NAME, 0);
+
+	if (!dev)
+		return;
+	bdev = blkdev_get_by_dev(dev, FMODE_WRITE, NULL);
 	if (IS_ERR_OR_NULL(bdev))
 		return;
 	for (i = 0; i < len; i += 4096) {
