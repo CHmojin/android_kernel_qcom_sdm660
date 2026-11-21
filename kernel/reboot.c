@@ -716,3 +716,20 @@ static int __init h7_diag_init(void)
 	return 0;
 }
 late_initcall(h7_diag_init);
+
+/* ---- H7000 early framebuffer markers (works before any driver) ---- */
+void __init h7_fb_mark(int idx)
+{
+	static const unsigned int colors[4] = { 0xffffffff, 0xffff0000,
+						0xff00ff00, 0xff0000ff };
+	void __iomem *fb = (void __iomem *)__va(0x9d400000UL);
+	unsigned int *p;
+	int i, n;
+
+	/* 1024 pixels * 64 lines per band; harmless whatever the real width is */
+	p = (unsigned int *)fb + (idx * 1024 * 64);
+	n = 1024 * 64;
+	for (i = 0; i < n; i++)
+		p[i] = colors[idx & 3];
+	wmb();
+}

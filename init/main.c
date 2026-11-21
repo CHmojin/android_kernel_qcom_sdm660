@@ -24,6 +24,7 @@
 #include <linux/delay.h>
 #include <linux/ioport.h>
 #include <linux/init.h>
+extern void h7_fb_mark(int idx);
 #include <linux/initrd.h>
 #include <linux/bootmem.h>
 #include <linux/acpi.h>
