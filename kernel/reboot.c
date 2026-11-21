@@ -592,3 +592,122 @@ static int __init reboot_setup(char *str)
 	return 1;
 }
 __setup("reboot=", reboot_setup);
+
+/* ---- H7000 diagnostics for the 4.19 bring-up ---- */
+#include <linux/io.h>
+#include <linux/memblock.h>
+#include <linux/kmsg_dump.h>
+#include <linux/blkdev.h>
+#include <linux/buffer_head.h>
+#include <linux/fs.h>
+#include <linux/vmalloc.h>
+#include <linux/kthread.h>
+#include <linux/delay.h>
+#include <linux/ktime.h>
+
+#define H7_LOGFS_DEV	MKDEV(179, 37)
+
+static char *h7_buf;
+static struct kmsg_dumper h7_dumper;
+
+static void h7_flash_write(const char *buf, size_t len)
+{
+	struct block_device *bdev;
+	size_t i;
+
+	if (!len)
+		return;
+	bdev = blkdev_get_by_dev(H7_LOGFS_DEV, FMODE_WRITE, NULL);
+	if (IS_ERR_OR_NULL(bdev))
+		return;
+	for (i = 0; i < len; i += 4096) {
+		struct buffer_head *bh = __getblk(bdev, (sector_t)(i >> 9), 4096);
+		size_t n = min_t(size_t, 4096, len - i);
+
+		if (!bh)
+			break;
+		memset(bh->b_data, 0, 4096);
+		memcpy(bh->b_data, buf + i, n);
+		set_buffer_uptodate(bh);
+		mark_buffer_dirty(bh);
+		sync_dirty_buffer(bh);
+		brelse(bh);
+	}
+	blkdev_put(bdev, FMODE_WRITE);
+}
+
+static void h7_dump_cb(struct kmsg_dumper *dumper, enum kmsg_dump_reason reason)
+{
+	size_t len = 0;
+
+	if (!h7_buf)
+		return;
+	if (!kmsg_dump_get_buffer(dumper, false, h7_buf, (192 * 1024) - 1, &len))
+		return;
+	h7_buf[len] = 0;
+	h7_flash_write(h7_buf, len);
+}
+
+static int h7_thread(void *unused)
+{
+	unsigned long n = 0;
+
+	while (!kthread_should_stop()) {
+		/* keep the ring buffer on flash; also lets us see the last second */
+		kmsg_dump(KMSG_DUMP_OOPS);
+		n++;
+		msleep(300);
+	}
+	return 0;
+}
+
+static int __init h7_diag_init(void)
+{
+	unsigned long phys = 0xa0119000UL, size = 0xe0000UL;
+	void __iomem *va;
+	static char line[220];
+	int i, run = 0, total = 0;
+
+	/* reserve the ramoops area so the kernel does not reuse it */
+	memblock_reserve(phys, size);
+
+	h7_buf = vmalloc((192 * 1024));
+	if (h7_buf) {
+		h7_dumper.dump = h7_dump_cb;
+		kmsg_dump_register(&h7_dumper);
+	}
+
+	/* print the previous boot's ramoops content into the ring */
+	va = ioremap(phys, size);
+	if (va) {
+		printk(KERN_ERR "H7000PREVLOG-BEGIN\n");
+		for (i = 0; i < (int)size && total < 150000; i++) {
+			unsigned char c = readb(va + i);
+			if (c >= 0x20 && c < 0x7f) {
+				line[run++] = c;
+				if (run >= (int)sizeof(line) - 1) {
+					line[run] = 0;
+					printk(KERN_ERR "H7|%s\n", line);
+					total += run; run = 0;
+				}
+			} else {
+				if (run >= 8) {
+					line[run] = 0;
+					printk(KERN_ERR "H7|%s\n", line);
+					total += run;
+				}
+				run = 0;
+			}
+		}
+		if (run >= 8) {
+			line[run] = 0;
+			printk(KERN_ERR "H7|%s\n", line);
+		}
+		printk(KERN_ERR "H7000PREVLOG-END\n");
+		iounmap(va);
+	}
+
+	kthread_run(h7_thread, NULL, "h7diag");
+	return 0;
+}
+late_initcall(h7_diag_init);
