@@ -1,9 +1,9 @@
 {
   "header_version": 1,
-  "kernel_size": 12267065,
+  "kernel_size": 0,
   "kernel_addr": 32768,
   "ramdisk_size": 825469,
-  "ramdisk_addr": 16777216,
+  "ramdisk_addr": 134217728,
   "second_size": 0,
   "second_addr": 0,
   "tags_addr": 256,
